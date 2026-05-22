@@ -13,10 +13,10 @@ export default defineConfig({
   themeConfig: {
     nav: [
       { text: '首页', link: '/' },
-      { text: '指南篇', link: '/guide/overview' },
-      { text: '架构篇', link: '/architecture/overview' },
-      { text: '核心篇', link: '/core/app-loading' },
-      { text: '进阶篇', link: '/advanced/custom-plugins' },
+      { text: '指南', link: '/guide/overview' },
+      { text: '架构', link: '/architecture/overview' },
+      { text: '核心', link: '/core/sandbox-overview' },
+      { text: '进阶', link: '/advanced/single-spa' },
     ],
 
     sidebar: {
@@ -65,9 +65,6 @@ export default defineConfig({
           items: [
             { text: 'JS 执行器', link: '/core/js-executor' },
             { text: '模块系统', link: '/core/module-system' },
-            { text: '生命周期管理', link: '/core/lifecycle-management' },
-            { text: '状态管理', link: '/core/state-management' },
-            { text: '预加载机制', link: '/core/prefetch' },
           ],
         },
       ],
@@ -75,6 +72,7 @@ export default defineConfig({
         {
           text: '进阶篇',
           items: [
+            { text: 'single-spa 核心', link: '/advanced/single-spa' },
             { text: '自定义插件', link: '/advanced/custom-plugins' },
             { text: '性能优化', link: '/advanced/performance' },
             { text: '最佳实践', link: '/advanced/best-practices' },
@@ -91,6 +89,40 @@ export default defineConfig({
     footer: {
       message: 'Released under the MIT License.',
       copyright: 'Copyright © 2024-present',
+    },
+
+    outline: {
+      label: '本页目录',
+      level: [2, 3],
+    },
+
+    docFooter: {
+      prev: '上一篇',
+      next: '下一篇',
+    },
+
+    search: {
+      provider: 'local',
+      options: {
+        locales: {
+          root: {
+            translations: {
+              button: {
+                buttonText: '搜索文档',
+                buttonAriaLabel: '搜索文档',
+              },
+              modal: {
+                noResultsText: '无法找到相关结果',
+                resetButtonTitle: '清除查询条件',
+                footer: {
+                  selectText: '选择',
+                  navigateText: '切换',
+                },
+              },
+            },
+          },
+        },
+      },
     },
   },
   
