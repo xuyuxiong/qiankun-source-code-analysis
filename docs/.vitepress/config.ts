@@ -86,11 +86,6 @@ export default defineConfig({
       { icon: 'github', link: 'https://github.com/xuyuxiong/qiankun-source-code-analysis' },
     ],
 
-    footer: {
-      message: 'Released under the MIT License.',
-      copyright: 'Copyright © 2024-present',
-    },
-
     outline: {
       label: '本页目录',
       level: [2, 3],
@@ -101,9 +96,15 @@ export default defineConfig({
       next: '下一篇',
     },
 
+    // 搜索配置
     search: {
       provider: 'local',
       options: {
+        detailedView: true,
+        hotKeys: [
+          { key: 'k', meta: true },
+          { key: 's', meta: true, ctrlKey: true },
+        ],
         locales: {
           root: {
             translations: {
@@ -115,14 +116,24 @@ export default defineConfig({
                 noResultsText: '无法找到相关结果',
                 resetButtonTitle: '清除查询条件',
                 footer: {
-                  selectText: '选择',
+                  selectText: '进入',
+                  selectKeyAriaLabel: '回车键',
                   navigateText: '切换',
+                  navigateUpKeyAriaLabel: '上箭头',
+                  navigateDownKeyAriaLabel: '下箭头',
+                  closeText: '关闭',
+                  closeKeyAriaLabel: 'ESC 键',
                 },
               },
             },
           },
         },
       },
+    },
+
+    footer: {
+      message: 'Released under the MIT License.',
+      copyright: 'Copyright © 2024-present',
     },
   },
   
