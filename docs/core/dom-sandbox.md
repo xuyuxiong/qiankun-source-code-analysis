@@ -1,276 +1,315 @@
 # DOM 沙箱
 
-## 概述
+> 动态 DOM 管理与副作用隔离
 
-DOM 沙箱负责隔离微应用的 DOM 操作，确保子应用只能在自己的容器内修改 DOM。
+**源码位置**: `packages/sandbox/src/patchers/dynamicAppend/`
 
-## DOM 操作拦截
+---
 
-### createElement 补丁
+## 📖 概述
 
-**源码位置:** `packages/sandbox/src/patchers/dynamicAppend/forStandardSandbox.ts`
+DOM 沙箱负责管理微应用的动态 DOM 操作，主要包括：
+
+1. **动态脚本/样式加载** - `document.createElement` 补丁
+2. **容器管理** - `createSandboxContainer` 工厂
+3. **副作用清理** - 事件监听器、定时器清理
+4. **History 同步** - 路由状态管理
+
+---
+
+## 🔧 动态 DOM 补丁
+
+### patchDocument
+
+**源码位置**: `packages/sandbox/src/patchers/dynamicAppend/forStdSandbox.ts`
 
 ```typescript
-function patchHTMLElement(
-  sandbox: StandardAppSandbox,
-  container: HTMLElement,
+import { checkURLL, rebaseOrRecordBase } from './common';
+import type { Sandbox } from '../../core/sandbox';
+
+export function patchDocument(
   appName: string,
-): AppInstance {
+  getContainer: () => HTMLElement | null,
+): Free {
   const rawCreateElement = document.createElement;
-  document.createElement = function(
+  const rawHeadAppendChild = HTMLHeadElement.prototype.appendChild;
+  const rawBodyAppendChild = HTMLBodyElement.prototype.appendChild;
+  
+  // 补丁 createElement
+  document.createElement = function<T extends HTMLElement>(
     tagName: string,
-    options?: ElementCreationOptions,
-  ): HTMLElement {
+    options?: ElementCreationOptions
+  ): T {
     const element = rawCreateElement.call(document, tagName, options);
     
-    // 标记为沙箱元素
+    // 标记为 qiankun 元素
     element.setAttribute('data-qiankun', appName);
     
     return element;
   };
   
-  return () => {
+  // 补丁 head.appendChild
+  HTMLHeadElement.prototype.appendChild = function<T extends Node>(node: T): T {
+    const container = getContainer();
+    
+    // 如果是 link/script/style 元素，重定向到容器
+    if (
+      isLinkOrScriptOrStyle(node) && 
+      container && 
+      !isHijackingTag(node, container)
+    ) {
+      rawHeadAppendChild.call(container, node);
+      return node;
+    }
+    
+    return rawHeadAppendChild.call(this, node);
+  };
+  
+  // 返回清理函数
+  return function free() {
     document.createElement = rawCreateElement;
+    HTMLHeadElement.prototype.appendChild = rawHeadAppendChild;
+    HTMLBodyElement.prototype.appendChild = rawBodyAppendChild;
   };
 }
 ```
 
-### appendChild 补丁
+### 关键功能
+
+| 功能 | 说明 |
+|------|------|
+| **元素标记** | 添加 `data-qiankun` 属性标识归属 |
+| **重定向到容器** | 动态 link/script/style 追加到应用容器 |
+| **Base URL 处理** | 记录或重写 `<base>` 标签 |
+
+---
+
+## 🗂️ 容器管理
+
+### createSandboxContainer
+
+**源码位置**: `packages/sandbox/src/core/sandbox/index.ts`
 
 ```typescript
-function patchAppendChild(
-  container: HTMLElement,
+export function createSandboxContainer(
   appName: string,
-): () => void {
-  const rawAppendChild = Node.prototype.appendChild;
+  getContainer: () => HTMLElement,
+  opts: {
+    globalContext?: WindowProxy;
+    extraGlobals?: Endowments;
+    fetch?: typeof window.fetch;
+    nodeTransformer?: (node: HTMLElement) => HTMLElement;
+    styleIsolation?: boolean;
+  },
+) {
+  const { globalContext, extraGlobals = {}, ...sandboxCfg } = opts;
   
-  Node.prototype.appendChild = function<T extends Node>(
-    child: T,
-  ): T {
-    // 检查元素是否属于当前应用
-    if (child.getAttribute('data-qiankun') !== appName) {
-      console.warn('[qiankun] DOM operation restricted');
-      return child;
-    }
-    
-    return rawAppendChild.call(this, child) as T;
-  };
-  
-  return () => {
-    Node.prototype.appendChild = rawAppendChild;
-  };
-}
-```
+  // 创建沙箱实例
+  let sandbox: Sandbox;
+  if (window.Proxy) {
+    sandbox = new StandardSandbox(appName, extraGlobals, globalContext);
+  }
 
-### removeChild 补丁
-
-```typescript
-function patchRemoveChild(<Node> parent, appInstance: AppInstance): () => void {
-  const rawRemoveChild = Node.prototype.removeChild;
-  
-  Node.prototype.removeChild = function<T extends Node>(child: T): T {
-    if (child.getAttribute('data-qiankun') !== appInstance.name) {
-      console.warn('[qiankun] Cannot remove element from other apps');
-      return child;
-    }
-    
-    return rawRemoveChild.call(this, child) as T;
-  };
-  
-  return () => {
-    Node.prototype.removeChild = rawRemoveChild;
-  };
-}
-```
-
-## 动态 DOM 管理
-
-### 动态脚本加载
-
-```typescript
-function patchDynamicScript(
-  sandbox: SandboxInstance,
-  appName: string,
-): () => void {
-  const rawCreateElement = document.createElement;
-  
-  document.createElement = function(tagName) {
-    const element = rawCreateElement.call(document, tagName);
-    
-    if (tagName.toUpperCase() === 'SCRIPT') {
-      // 标记为沙箱脚本
-      element.setAttribute('data-qiankun-script', appName);
-    }
-    
-    return element;
-  };
-  
-  return () => {
-    document.createElement = rawCreateElement;
-  };
-}
-```
-
-### 动态样式加载
-
-```typescript
-function patchDynamicStyle(
-  container: HTMLElement,
-  appName: string,
-): () => void {
-  const rawQuerySelector = Document.prototype.querySelector;
-  
-  Document.prototype.querySelector = function(selectors) {
-    const element = rawQuerySelector.call(this, selectors);
-    
-    if (element?.tagName === 'LINK' || element?.tagName === 'STYLE') {
-      // 检查样式是否属于当前应用
-      if (element.getAttribute('data-qiankun') !== appName) {
-        return null;
-      }
-    }
-    
-    return element;
-  };
-  
-  return () => {
-    Document.prototype.querySelector = rawQuerySelector;
-  };
-}
-```
-
-## 容器管理
-
-### 容器元素创建
-
-```typescript
-function createContainerElement(
-  appName: string,
-): HTMLElement {
-  const container = document.createElement('div');
-  container.className = `qiankun-container-${appName}`;
-  container.setAttribute('data-qiankun-app', appName);
-  
-  // 创建内部 head 和 body
-  const head = document.createElement('head');
-  const body = document.createElement('body');
-  
-  container.appendChild(head);
-  container.appendChild(body);
-  
-  return container;
-}
-```
-
-### 容器清理
-
-```typescript
-function cleanupContainer(container: HTMLElement, appName: string): void {
-  // 移除所有属于该应用的元素
-  const appElements = container.querySelectorAll(
-    `[data-qiankun-app="${appName}"]`
+  // bootstrapping 阶段的副作用补丁
+  const bootstrappingFrees = patchAtBootstrapping(
+    appName,
+    getContainer,
+    { sandbox, ...sandboxCfg }
   );
   
-  appElements.forEach(element => {
-    element.remove();
-  });
-  
-  // 清理样式
-  const styles = container.querySelectorAll('style');
-  styles.forEach(style => {
-    if (style.textContent.includes(`[data-qiankun="${appName}"]`)) {
-      style.remove();
-    }
-  });
+  let mountingFrees: Free[] = [];
+  let sideEffectsRebuilds: Rebuild[] = [];
+
+  return {
+    instance: sandbox,
+
+    /**
+     * Mount - 应用挂载
+     */
+    async mount(container: HTMLElement) {
+      // 1. 激活沙箱
+      sandbox.active();
+
+      const sideEffectsRebuildsAtBootstrapping = sideEffectsRebuilds.slice(
+        0,
+        bootstrappingFrees.length
+      );
+      const sideEffectsRebuildsAtMounting = sideEffectsRebuilds.slice(
+        bootstrappingFrees.length
+      );
+
+      // 重建 bootstrapping 阶段的副作用
+      if (sideEffectsRebuildsAtBootstrapping.length) {
+        for (const rebuildSideEffects of sideEffectsRebuildsAtBootstrapping) {
+          await rebuildSideEffects(container);
+        }
+      }
+
+      // 2. 应用 mounting 阶段补丁
+      mountingFrees = patchAtMounting(
+        appName,
+        getContainer,
+        { sandbox, ...sandboxCfg }
+      );
+
+      // 3. 重置初始化副作用
+      if (sideEffectsRebuildsAtMounting.length) {
+        for (const rebuildSideEffects of sideEffectsRebuildsAtMounting) {
+          await rebuildSideEffects(container);
+        }
+      }
+
+      sideEffectsRebuilds = [];
+    },
+
+    /**
+     * Unmount - 应用卸载
+     */
+    async unmount() {
+      // 记录副作用重建函数
+      sideEffectsRebuilds = [
+        ...bootstrappingFrees,
+        ...mountingFrees,
+      ].map((free) => free());
+
+      // 失活沙箱
+      sandbox.inactive();
+    },
+  };
 }
 ```
 
-## 元素标记
+### Mount/Unmount 流程
 
-### 属性标记
-
-```typescript
-function markElement(element: Element, appName: string): void {
-  element.setAttribute('data-qiankun', appName);
-  element.setAttribute('data-timestamp', Date.now().toString());
-}
+```
+┌─────────────────────────────────────────────────┐
+│                    Mount                        │
+│  1. sandbox.active() 激活沙箱                   │
+│  2. 重建 bootstrapping 副作用                   │
+│  3. 应用 mounting 补丁                          │
+│  4. 重置 mounting 副作用                        │
+└─────────────────────────────────────────────────┘
+                         ↓
+                  应用运行中...
+                         ↓
+┌─────────────────────────────────────────────────┐
+│                   Unmount                       │
+│  1. 记录副作用重建函数                          │
+│  2. sandbox.inactive() 失活沙箱                 │
+└─────────────────────────────────────────────────┘
 ```
 
-### Symbol 标记
+---
+
+## 🔌 补丁类型
+
+### patchAtBootstrapping
+
+**源码位置**: `packages/sandbox/src/patchers/index.ts`
 
 ```typescript
-const elementAppSymbol = Symbol('qiankun-app');
-
-function setElementApp(element: Element, appName: string): void {
-  Object.defineProperty(element, elementAppSymbol, {
-    value: appName,
-    writable: true,
-    enumerable: false,
-    configurable: true,
-  });
-}
-
-function getElementApp(element: Element): string | null {
-  return element[elementAppSymbol] || null;
-}
-```
-
-## 事件处理
-
-### 事件代理
-
-```typescript
-function setupEventDelegation(
-  container: HTMLElement,
+export function patchAtBootstrapping(
   appName: string,
-): () => void {
-  const eventHandler = (event: Event) => {
-    const target = event.target as Element;
-    const targetApp = target.closest('[data-qiankun-app]');
-    
-    if (targetApp?.getAttribute('data-qiankun-app') !== appName) {
-      // 阻止事件冒泡到其他应用
-      event.stopPropagation();
-    }
-  };
-  
-  container.addEventListener('click', eventHandler, true);
-  container.addEventListener('change', eventHandler, true);
-  
-  return () => {
-    container.removeEventListener('click', eventHandler, true);
-    container.removeEventListener('change', eventHandler, true);
-  };
+  getContainer: () => HTMLElement,
+  cfg: SandboxConfig,
+): Free[] {
+  const { sandbox, fetch, nodeTransformer, styleIsolation } = cfg;
+
+  const bootstrappingFrees = [];
+
+  // 1. 动态文档补丁
+  bootstrappingFrees.push(
+    patchDocument(appName, getContainer)
+  );
+
+  // 2. History 补丁
+  bootstrappingFrees.push(
+    patchHistoryListener(appName)
+  );
+
+  // 3. 窗口监听器补丁 (resize/scroll 等)
+  bootstrappingFrees.push(
+    patchWindowListener(appName)
+  );
+
+  return bootstrappingFrees;
 }
 ```
 
-## 历史状态管理
-
-### History 补丁
-
-**源码位置:** `packages/sandbox/src/patchers/historyListener.ts`
+### patchAtMounting
 
 ```typescript
+export function patchAtMounting(
+  appName: string,
+  getContainer: () => HTMLElement,
+  cfg: SandboxConfig,
+): Free[] {
+  const { sandbox, fetch, nodeTransformer, styleIsolation } = cfg;
+
+  const mountingFrees = [];
+
+  // 1. 间隔器补丁 (setInterval/setTimeout)
+  mountingFrees.push(
+    patchInterval(sandbox)
+  );
+
+  // 2. 使用方自定义补丁
+  // ...
+
+  return mountingFrees;
+}
+```
+
+---
+
+## 📁 补丁文件结构
+
+```
+packages/sandbox/src/patchers/
+├── dynamicAppend/          # 动态 DOM 管理
+│   ├── forStdSandbox.ts    # 标准沙箱补丁
+│   ├── common.ts           # 公共工具
+│   ├── types.ts            # 类型定义
+│   └── index.ts
+├── historyListener.ts      # History 补丁
+├── windowListener.ts       # 窗口监听器补丁
+├── interval.ts             # 定时器补丁
+├── index.ts                # 补丁入口
+├── types.ts                # 补丁类型
+└── consts.ts               # 常量
+```
+
+---
+
+## 🕰️ History 补丁
+
+**源码位置**: `packages/sandbox/src/patchers/historyListener.ts`
+
+```typescript
+import type { Rebuild } from './types';
+
 export function patchHistoryListener(
-  sandbox: Sandbox,
   appName: string,
-): Rebox {
+): Rebuild {
   const rawPushState = history.pushState;
   const rawReplaceState = history.replaceState;
-  
+
+  let currentPath = location.pathname;
+
   history.pushState = function(...args) {
     const result = rawPushState.apply(this, args);
-    
-    // 检查是否是当前应用的操作
-    if (getCurrentApp() === appName) {
-      // 允许修改
-    } else {
-      console.warn('[qiankun] History manipulation restricted');
-    }
-    
+    currentPath = location.pathname;
+    // qiankun 3.x 不再限制 History 操作
     return result;
   };
-  
+
+  history.replaceState = function(...args) {
+    const result = rawReplaceState.apply(this, args);
+    currentPath = location.pathname;
+    return result;
+  };
+
+  // 返回重建函数
   return () => {
     history.pushState = rawPushState;
     history.replaceState = rawReplaceState;
@@ -278,155 +317,140 @@ export function patchHistoryListener(
 }
 ```
 
-## 卸载清理
+---
 
-### DOM 清理
+## ⏱️ 定时器补丁
 
-```typescript
-function cleanupDOM(appName: string): void {
-  // 移除应用相关的所有 DOM 元素
-  const appElements = document.querySelectorAll(
-    `[data-qiankun="${appName}"]`
-  );
-  
-  appElements.forEach(element => {
-    element.remove();
-  });
-  
-  // 恢复被修改的原型方法
-  restorePrototypeMethods();
-}
-```
-
-### 事件清理
+**源码位置**: `packages/sandbox/src/patchers/interval.ts`
 
 ```typescript
-function cleanupEvents(appName: string): void {
-  // 移除事件监听器
-  const markedElements = document.querySelectorAll(
-    `[data-qiankun-event="${appName}"]`
-  );
-  
-  markedElements.forEach(element => {
-    // 获取存储的事件信息
-    const events = element._qiankunEvents || [];
-    events.forEach(({ type, handler }) => {
-      element.removeEventListener(type, handler);
-    });
-  });
-}
-```
+import type { Free } from './types';
+import type { Sandbox } from '../core/sandbox';
 
-### 定时器清理
-
-```typescript
-export function patchInterval(sandbox: SandboxInstance): () => void {
+export function patchInterval(sandbox: Sandbox): Free {
   const rawSetInterval = window.setInterval;
   const rawClearInterval = window.clearInterval;
-  
-  const timerMap = new Map<number, { appName: string; callback: Function }>();
-  
-  window.setInterval = function(
-    callback: Function,
-    delay?: number,
-    ...args: any[]
-  ): number {
-    const id = rawSetInterval.call(
-      window,
-      wrapperCallback(callback, sandbox.name),
-      delay,
-      ...args
-    );
-    timerMap.set(id, { appName: sandbox.name, callback });
+  const rawSetTimeout = window.setTimeout;
+  const rawClearTimeout = window.clearTimeout;
+
+  // 记录定时器 ID
+  const intervalIDs = new Set<number>();
+  const timeoutIDs = new Set<number>();
+
+  window.setInterval = function(...args) {
+    const id = rawSetInterval.apply(this, args);
+    intervalIDs.add(id);
     return id;
   };
-  
+
+  window.clearInterval = function(id) {
+    intervalIDs.delete(id);
+    return rawClearInterval(id);
+  };
+
+  window.setTimeout = function(...args) {
+    const id = rawSetTimeout.apply(this, args);
+    timeoutIDs.add(id);
+    return id;
+  };
+
+  window.clearTimeout = function(id) {
+    timeoutIDs.delete(id);
+    return rawClearTimeout(id);
+  };
+
   return () => {
+    // 恢复原生方法
     window.setInterval = rawSetInterval;
     window.clearInterval = rawClearInterval;
-    
+    window.setTimeout = rawSetTimeout;
+    window.clearTimeout = rawClearTimeout;
+
     // 清理定时器
-    timerMap.forEach(({ appName }, id) => {
-      if (appName === sandbox.name) {
-        window.clearInterval(id);
-      }
-    });
+    intervalIDs.forEach(id => rawClearInterval(id));
+    timeoutIDs.forEach(id => rawClearTimeout(id));
   };
 }
 ```
 
-## 实际应用
+---
 
-### 完整 DOM 隔离流程
+## 🧹 副作用清理
+
+### Rebuild 机制
 
 ```typescript
-function isolationDOMFlow(appName: string, container: HTMLElement) {
-  // 1. 创建容器标记
-  container.setAttribute('data-qiankun-app', appName);
-  
-  // 2. 应用 DOM 补丁
-  const unpatchFunctions = [
-    patchDocument(container, appName),
-    patchHTMLElement(container, appName),
-    patchNode(container, appName),
-  ];
-  
-  // 3. 设置事件代理
-  const unbindDelegation = setupEventDelegation(container, appName);
-  
-  // 4. 返回清理函数
-  return () => {
-    unpatchFunctions.forEach(unpatch => unpatch());
-    unbindDelegation();
-    cleanupContainer(container, appName);
-  };
-}
+// packages/sandbox/src/patchers/types.ts
+export type Free = () => void;
+export type Rebuild = () => Free; // 返回清理函数
 ```
 
-## 最佳实践
-
-### 1. 及时清理 DOM
+### 清理时机
 
 ```typescript
-export async function unmount() {
-  // 清理定时器
-  if (this.timer) {
-    clearInterval(this.timer);
+async function unmount() {
+  // 1. 生成重建函数
+  sideEffectsRebuilds = [
+    ...bootstrappingFrees,  // bootstrapping 阶段补丁
+    ...mountingFrees,        // mounting 阶段补丁
+  ].map((free) => free());   // 执行清理，获取重建函数
+
+  // 2. 失活沙箱
+  sandbox.inactive();
+}
+
+async function mount() {
+  // ...
+  
+  // 3. 重建副作用
+  if (sideEffectsRebuilds.length) {
+    for (const rebuildSideEffects of sideEffectsRebuilds) {
+      await rebuildSideEffects(container); // 执行重建
+    }
   }
-  
-  // 清理事件监听
-  this.offGlobalStateChange?.();
-  
-  // 清理 DOM 引用
-  this.container = null;
 }
 ```
 
-### 2. 避免直接操作 document
+---
+
+## 🎯 最佳实践
+
+### 1. 使用 container 而非 document
 
 ```typescript
-// ❌ 不好的做法
+// ❌ 不推荐
 document.body.appendChild(this.element);
 
-// ✅ 好的做法
+// ✅ 推荐
 this.props.container.appendChild(this.element);
 ```
 
-### 3. 使用事件委托
+### 2. 及时清理定时器
 
 ```typescript
-// ❌ 给每个元素添加事件
-buttons.forEach(btn => btn.addEventListener('click', handler));
-
-// ✅ 事件委托
-container.addEventListener('click', e => {
-  if (e.target.matches('.btn')) {
-    handler(e);
+export async function unmount() {
+  if (this.timer) {
+    clearInterval(this.timer);
+    this.timer = null;
   }
-});
+}
 ```
 
-## 下一步
+### 3. 清理事件监听
+
+```typescript
+export async function unmount() {
+  if (this.offGlobalStateChange) {
+    this.offGlobalStateChange();
+    this.offGlobalStateChange = null;
+  }
+}
+```
+
+---
+
+## ➡️ 下一步
 
 - [JS 执行器](/core/js-executor) - 学习脚本执行
 - [生命周期管理](/core/lifecycle-management) - 了解应用生命周期
+- [沙箱总览](/core/sandbox-overview) - 架构图解
