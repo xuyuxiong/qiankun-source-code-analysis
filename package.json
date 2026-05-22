@@ -1,0 +1,27 @@
+{
+  "name": "qiankun-source-code-analysis",
+  "version": "1.0.0",
+  "description": "qiankun 源码深度解析 - 从微前端架构到沙箱隔离",
+  "type": "module",
+  "scripts": {
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs"
+  },
+  "keywords": [
+    "qiankun",
+    "micro-frontend",
+    "microfrontend",
+    "source-code",
+    "sandbox",
+    "javascript",
+    "webpack",
+    "monorepo"
+  ],
+  "author": "see IDENTITY.md",
+  "license": "MIT",
+  "devDependencies": {
+    "vitepress": "^1.0.0",
+    "vue": "^3.4.0"
+  }
+}
