@@ -1,12 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
-  <defs>
-    <linearGradient id="qkGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#ff6a00;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#ff8c00;stop-opacity:1" />
-    </linearGradient>
-  </defs>
-  <rect width="200" height="200" rx="40" fill="url(#qkGrad)"/>
-  <text x="100" y="110" font-family="Arial, sans-serif" font-size="60" font-weight="bold" fill="white" text-anchor="middle">QK</text>
-  <text x="100" y="145" font-family="Arial, sans-serif" font-size="18" fill="white" text-anchor="middle" opacity="0.9">微前端</text>
-  <text x="100" y="165" font-family="Arial, sans-serif" font-size="14" fill="white" text-anchor="middle" opacity="0.7">3.x</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 300" width="300" height="300">
+  <rect width="300" height="300" rx="20" fill="#635dff"/>
+  <g transform="translate(60, 60)">
+    <rect x="0" y="40" width="28" height="80" fill="white"/>
+    <rect x="38" y="20" width="28" height="100" fill="white" opacity="0.8"/>
+    <rect x="76" y="0" width="28" height="120" fill="white" opacity="0.6"/>
+    <rect x="114" y="40" width="28" height="80" fill="white" opacity="0.4"/>
+  </g>
+  <text x="150" y="230" font-family="Arial, sans-serif" font-size="32" font-weight="bold" fill="white" text-anchor="middle" opacity="0.95">qiankun</text>
+  <text x="150" y="255" font-family="Arial, sans-serif" font-size="14" fill="white" text-anchor="middle" opacity="0.75">Micro Frontends</text>
 </svg>
