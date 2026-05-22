@@ -62,11 +62,11 @@ export default defineConfig({
         {
           text: '进阶篇',
           items: [
-            { text: '📦 single-spa 核心', link: '/advanced/single-spa' },
-            { text: '🔌 插件系统', link: '/advanced/plugins' },
-            { text: '⚡ 性能优化', link: '/advanced/performance' },
-            { text: '📝 最佳实践', link: '/advanced/best-practices' },
-            { text: '🎯 实战案例', link: '/advanced/case-studies' },
+            { text: 'single-spa 核心', link: '/advanced/single-spa' },
+            { text: '插件系统', link: '/advanced/custom-plugins' },
+            { text: '性能优化', link: '/advanced/performance' },
+            { text: '最佳实践', link: '/advanced/best-practices' },
+            { text: '常见问题', link: '/advanced/faq' },
           ],
         },
       ],
