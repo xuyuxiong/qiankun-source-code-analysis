@@ -9,6 +9,9 @@ hero:
     src: /qiankun-logo.svg
     alt: qiankun Logo
   actions:
+    - theme: brand
+      text: 开始学习
+      link: /guide/overview
     - theme: alt
       text: GitHub
       link: https://github.com/xuyuxiong/qiankun-source-code-analysis
